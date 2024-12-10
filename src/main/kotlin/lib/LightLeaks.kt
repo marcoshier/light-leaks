@@ -9,6 +9,7 @@ import org.openrndr.extra.midi.MidiTransceiver
 import org.openrndr.extra.parameters.BooleanParameter
 import org.openrndr.extra.parameters.DoubleParameter
 import org.openrndr.extra.parameters.IntParameter
+import org.openrndr.extra.parameters.listParameters
 import org.openrndr.math.map
 import org.openrndr.poissonfill.PoissonFill
 import org.openrndr.shape.LineSegment
@@ -26,7 +27,7 @@ fun Program.lightLeaks(
         var n = 5
 
         @DoubleParameter("radius", 0.1, 20.0)
-        var radius = 5.0
+        var lightRadius = 5.0
 
         @DoubleParameter("larghezza", 0.0, 400.0)
         var xOffset = 10.0
@@ -55,6 +56,41 @@ fun Program.lightLeaks(
         @BooleanParameter("dithering")
         var dither = true
 
+
+        val pix = Pixelate()
+        val pf = PoissonFill()
+        val lb = LaserBlur()
+
+
+        val ranges = (listParameters() + lb.listParameters()).associate { it.label to it.doubleRange }
+
+        fun Int.midiMapped(label: String): Double {
+            val l = ranges.getValue(label)!!.start
+            val r = ranges.getValue(label)!!.endInclusive
+
+            return this.toDouble().map(0.0, 127.0, l, r, true)
+        }
+
+        fun assignValue(label: String, value: Int) {
+            when(label) {
+                "n" -> n = value.midiMapped(label).toInt()
+                "lightRadius" ->  lightRadius = value.midiMapped(label)
+                "xOffset" ->  xOffset = value.midiMapped(label)
+                "movY" ->  movY = value.midiMapped(label)
+                "movX" ->  movX = value.midiMapped(label)
+                "speedY" ->  speedY = value.midiMapped(label)
+                "speedX" ->  speedX = value.midiMapped(label)
+                "offsetX" ->  offsetX = value.midiMapped(label)
+                "offsetY" ->  offsetY = value.midiMapped(label)
+                "resolution" ->  pix.resolution = value.midiMapped(label)
+                "radius" -> lb.radius = value.midiMapped(label)
+                "amp0" -> lb.amp0 = value.midiMapped(label)
+                "amp1" -> lb.amp1 = value.midiMapped(label)
+                "exp" -> lb.exp = value.midiMapped(label)
+                "phase" -> lb.phase = value.midiMapped(label)
+            }
+        }
+
         fun draw() {
             drawer.clear(ColorRGBa.TRANSPARENT)
             var origins = listOf(drawer.bounds.center)
@@ -77,7 +113,7 @@ fun Program.lightLeaks(
             for (p in origins) {
                 drawer.stroke = null
                 drawer.fill = ColorRGBa.WHITE
-                drawer.circle(p, radius)
+                drawer.circle(p, lightRadius)
             }
 
             drawer.strokeWeight = strokeWeight
@@ -90,43 +126,46 @@ fun Program.lightLeaks(
 
     val stage = Stage()
 
-    val pf = PoissonFill()
-    val lb = LaserBlur()
-    val pix = Pixelate()
+    var learning = false
 
-    midiTransceiver?.controlChanged?.listen {
+    keyboard.character.listen {
+        if (it.character == 'l') {
+            learning = !learning
+        }
+    }
+
+    val parameters = stage.listParameters() + stage.lb.listParameters()
+    val unassigned = parameters.map { it.label }.toMutableList()
+
+    val map = mutableMapOf<Int, String>()
+
+    midiTransceiver?.controlChanged!!.listen {
+        println(it.control)
         val (i, value) = it.control to it.value
-        when (i) {
-            0 -> stage.n = map(0.0, 127.0, 0.0, 20.0, value.toDouble()).toInt()
-            1 -> stage.radius = map(0.0, 127.0, 0.1, 100.0, value.toDouble())
-            2 -> stage.xOffset = map(0.0, 127.0, 0.0, 400.0, value.toDouble())
-            3 -> stage.movY = map(0.0, 127.0, 0.0, 2.0, value.toDouble())
-            4 -> stage.speedY = map(0.0, 127.0, 0.0, 500.0, value.toDouble())
-            5 -> stage.movX = map(0.0, 127.0, 0.0, 2.0, value.toDouble())
-            6 -> stage.speedX = map(0.0, 127.0, 0.0, 500.0, value.toDouble())
-            23 -> stage.offsetX = map(0.0, 127.0, 0.0, 80.0, value.toDouble())
-            16 -> pix.resolution = map(0.0, 127.0, 0.01, 1.0, value.toDouble())
-            17 -> lb.radius = map(0.0, 127.0, -2.0, 2.0, value.toDouble())
-            18 -> lb.amp0 = map(0.0, 127.0, 0.0, 1.0, value.toDouble())
-            19 -> lb.amp1 = map(0.0, 127.0, 0.0, 1.0, value.toDouble())
-            20 -> lb.exp = map(0.0, 127.0, -1.0, 1.0, value.toDouble())
-            21 -> lb.phase = map(0.0, 127.0, -1.0, 1.0, value.toDouble())
-            22 -> lb.radius = map(0.0, 127.0, -2.0, 2.0, value.toDouble())
+
+        val label = map.getOrPut(i) {
+            val unassignedValue = unassigned.firstOrNull()
+            if (unassignedValue == null) { "" }
+            else {
+                unassigned.remove(unassignedValue)
+                unassignedValue
+            }
         }
 
+        stage.assignValue(label, value)
     }
 
 
     extend(Post()) {
         post { input, output ->
             val i1 = intermediate[1]
-            pf.apply(input, i1)
-            if (stage.dither || pix.resolution == 0.0) {
+            stage.pf.apply(input, i1)
+            if (stage.dither || stage.pix.resolution == 0.0) {
                 val i2 = intermediate[2]
-                lb.apply(i1, i2)
-                pix.apply(i2, output)
+                stage.lb.apply(i1, i2)
+                stage.pix.apply(i2, output)
             } else {
-                lb.apply(i1, output)
+                stage.lb.apply(i1, output)
             }
 
         }
@@ -134,11 +173,5 @@ fun Program.lightLeaks(
 
     extend {
         stage.draw()
-
-        if (midiTransceiver == null) {
-            drawer.fontMap = defaultFontMap
-            drawer.fill = ColorRGBa.RED
-            drawer.text("could not open midi device", 30.0, 50.0)
-        }
     }
 }

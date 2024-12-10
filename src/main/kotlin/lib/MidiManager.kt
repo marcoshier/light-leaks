@@ -9,8 +9,10 @@ import org.openrndr.extra.midi.MidiTransceiver
 import org.openrndr.extra.midi.listMidiDevices
 import org.openrndr.extra.textwriter.writer
 import org.openrndr.shape.Rectangle
+import javax.sound.midi.MidiDevice
 import javax.sound.midi.MidiSystem
 
+data class MidiInfo(val name: String, val vendor: String, val transmitter: MidiDevice? = null, val receiver: MidiDevice? = null)
 
 class MidiManager(val program: Program) {
 
@@ -19,46 +21,47 @@ class MidiManager(val program: Program) {
     var choice = 0
     var delivered = false
 
+    val recName = "CTRL"
+    val transName = "SLIDER"
+
     val deviceSelected = Event<Unit>()
 
-    var selectedDevice: MidiTransceiver? = null
-        set(value) {
-            if (field != null) {
-                field = value
-                deviceSelected.trigger(Unit)
-            }
-        }
+    var selectedDevice: MidiInfo? = null
 
     fun deliver() {
-        deviceSelected.trigger(Unit)
         try {
             devices[choice].open(program)
+            selectedDevice = MidiInfo(devices[choice].name, devices[choice].vendor)
+            return
         } catch (e: Throwable) {
             if (e is java.lang.IllegalArgumentException) {
                 val info = MidiSystem.getMidiDeviceInfo()
+                println(info)
 
                 for (device in info) {
                     for (other in info.toList().minus(device)) {
                         if (device.name == other.name) {
-                            val rec = MidiSystem.getMidiDevice(info.first { it.name.startsWith("CTRL") }).apply { open() }
-                            val trans = MidiSystem.getMidiDevice(info.first { it.name.startsWith("SLIDER") }).apply { open() }
+                            val rec = MidiSystem.getMidiDevice(info.first { it.name.contains(recName) }).apply { open() }
+                            val trans = MidiSystem.getMidiDevice(info.first { it.name.contains(transName) }).apply { open() }
 
-                            val tr = MidiTransceiver(program, rec, trans)
-                            selectedDevice = tr
-                            delivered = true
+                            selectedDevice = MidiInfo("", "", trans, rec)
                             return
                         }
                     }
                 }
-
-                if (selectedDevice == null) {
-                    println("failed to create working device")
-                }
-
+            } else {
+                e.printStackTrace()
             }
+        } finally {
+            if (selectedDevice != null) {
+                deviceSelected.trigger(Unit)
+            } else {
+                println("failed to create working device")
+            }
+
+            delivered = true
         }
 
-        delivered = true
     }
 
     init {

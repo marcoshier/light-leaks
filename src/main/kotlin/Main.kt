@@ -1,10 +1,12 @@
-import lib.FullscreenManager
-import lib.MidiManager
-import lib.ResolutionManager
-import lib.lightLeaks
+import lib.*
 import org.openrndr.*
+import org.openrndr.color.ColorRGBa
+import org.openrndr.draw.defaultFontMap
+import org.openrndr.draw.loadFont
 import org.openrndr.extra.midi.MidiTransceiver
+import org.openrndr.extra.midi.openMidiDevice
 import org.openrndr.extra.viewbox.viewBox
+import javax.sound.midi.MidiSystem
 
 fun main() {
 
@@ -15,9 +17,9 @@ fun main() {
 }
 
 
-fun selectionScreen(): Pair<Configuration, MidiTransceiver?> {
+fun selectionScreen(): Pair<Configuration, MidiInfo?> {
     var config: Configuration? = null
-    var midiDevice: MidiTransceiver? = null
+    var midiDevice: MidiInfo? = null
 
     application {
         program {
@@ -28,6 +30,9 @@ fun selectionScreen(): Pair<Configuration, MidiTransceiver?> {
 
             midiManager.deviceSelected.listen {
                 resolutionManager = ResolutionManager(this)
+                midiDevice = midiManager.selectedDevice
+
+                println(midiDevice)
 
                 resolutionManager?.resolutionSelected?.listen { resolution ->
                     fullscreenManager = FullscreenManager(this)
@@ -39,7 +44,6 @@ fun selectionScreen(): Pair<Configuration, MidiTransceiver?> {
                             this.fullscreen = if (fullscreen) Fullscreen.SET_DISPLAY_MODE else Fullscreen.DISABLED
                         }
 
-                        midiDevice = midiManager.selectedDevice
                         application.exit()
                     }
                 }
@@ -53,12 +57,7 @@ fun selectionScreen(): Pair<Configuration, MidiTransceiver?> {
                     drawer.translate(it.textWidth, 0.0)
                     fullscreenManager?.draw(drawer)
                 }
-
-
             }
-
-
-
         }
     }
 
@@ -67,7 +66,7 @@ fun selectionScreen(): Pair<Configuration, MidiTransceiver?> {
 
 
 
-fun mainProgram(config: Configuration, midi: MidiTransceiver?) {
+fun mainProgram(config: Configuration, midiInfo: MidiInfo?) {
     application {
         configure {
             this.width = config.width
@@ -77,8 +76,15 @@ fun mainProgram(config: Configuration, midi: MidiTransceiver?) {
 
         program {
 
+            val midiDevice = if (midiInfo?.receiver == null) {
+                MidiTransceiver.fromDeviceVendor(this, midiInfo!!.name, midiInfo.vendor)
+            } else {
+                MidiTransceiver(this, midiInfo.receiver, midiInfo.transmitter)
+            }
+
+
             val vb = viewBox(drawer.bounds) {
-                lightLeaks(midi)
+                lightLeaks(midiDevice)
             }
 
             extend {
