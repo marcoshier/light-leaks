@@ -141,6 +141,7 @@ fun Program.lightLeaks(
 
     midiTransceiver?.controlChanged!!.listen {
         println(it.control)
+
         val (i, value) = it.control to it.value
 
         val label = map.getOrPut(i) {

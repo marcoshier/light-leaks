@@ -82,6 +82,10 @@ fun mainProgram(config: Configuration, midiInfo: MidiInfo?) {
                 MidiTransceiver(this, midiInfo.receiver, midiInfo.transmitter)
             }
 
+            println(midiDevice)
+            println(midiDevice.receiverDevice?.isOpen)
+            println(midiDevice.transmitterDevicer?.isOpen)
+
 
             val vb = viewBox(drawer.bounds) {
                 lightLeaks(midiDevice)
